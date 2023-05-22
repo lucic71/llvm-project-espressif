@@ -163,7 +163,7 @@ def EXCSAVE7 : SRReg<215, "excsave7", ["EXCSAVE7", "215"]>;
 def CPENABLE : SRReg<224, "cpenable", ["CPENABLE", "224"]>;
 
 // Interrupt enable mask register
-def INTSET : SRReg<226, "interrupt", ["INTERRUPT", "226"]>;
+def INTSET : SRReg<226, "intset", ["INTERRUPT", "226"]>;
 
 def INTCLEAR : SRReg<227, "intclear", ["INTCLEAR", "227"]>;
 
