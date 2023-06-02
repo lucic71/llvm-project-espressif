@@ -422,7 +422,7 @@ public:
 
     if (Value *Result = ConstantEmitter(CGF).tryEmitConstantExpr(E)) {
       if (E->isGLValue())
-        return CGF.Builder.CreateLoad(Address(
+        return CGF.Builder.CreateLoad(!CGF.CGM.getCodeGenOpts().UseDefaultAlignment, Address(
             Result, CGF.ConvertTypeForMem(E->getType()),
             CGF.getContext().getTypeAlignInChars(E->getType())));
       return Result;
@@ -768,8 +768,8 @@ public:
   // Common helper for getting how wide LHS of shift is.
   static Value *GetWidthMinusOneValue(Value* LHS,Value* RHS);
 
-  // Used for shifting constraints for OpenCL, do mask for powers of 2, URem for
-  // non powers of two.
+  // Used for shifting constraints for OpenCL or for constrain-shift-value flag,
+  // do mask for powers of 2, URem for non powers of two.
   Value *ConstrainShiftValue(Value *LHS, Value *RHS, const Twine &Name);
 
   Value *EmitDiv(const BinOpInfo &Ops);
@@ -2525,7 +2525,7 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
     if (isInc && type->isBooleanType()) {
       llvm::Value *True = CGF.EmitToMemory(Builder.getTrue(), type);
       if (isPre) {
-        Builder.CreateStore(True, LV.getAddress(CGF), LV.isVolatileQualified())
+        Builder.CreateStore(!CGF.CGM.getCodeGenOpts().UseDefaultAlignment, True, LV.getAddress(CGF), LV.isVolatileQualified())
             ->setAtomic(llvm::AtomicOrdering::SequentiallyConsistent);
         return Builder.getTrue();
       }
@@ -3936,7 +3936,7 @@ Value *ScalarExprEmitter::EmitShl(const BinOpInfo &Ops) {
   bool SanitizeBase = SanitizeSignedBase || SanitizeUnsignedBase;
   bool SanitizeExponent = CGF.SanOpts.has(SanitizerKind::ShiftExponent);
   // OpenCL 6.3j: shift values are effectively % word size of LHS.
-  if (CGF.getLangOpts().OpenCL)
+  if (CGF.getLangOpts().OpenCL || !CGF.CGM.getCodeGenOpts().NoConstrainShiftValue)
     RHS = ConstrainShiftValue(Ops.LHS, RHS, "shl.mask");
   else if ((SanitizeBase || SanitizeExponent) &&
            isa<llvm::IntegerType>(Ops.LHS->getType())) {
@@ -4005,7 +4005,7 @@ Value *ScalarExprEmitter::EmitShr(const BinOpInfo &Ops) {
     RHS = Builder.CreateIntCast(RHS, Ops.LHS->getType(), false, "sh_prom");
 
   // OpenCL 6.3j: shift values are effectively % word size of LHS.
-  if (CGF.getLangOpts().OpenCL)
+  if (CGF.getLangOpts().OpenCL || !CGF.CGM.getCodeGenOpts().NoConstrainShiftValue)
     RHS = ConstrainShiftValue(Ops.LHS, RHS, "shr.mask");
   else if (CGF.SanOpts.has(SanitizerKind::ShiftExponent) &&
            isa<llvm::IntegerType>(Ops.LHS->getType())) {
@@ -4738,7 +4738,7 @@ Value *ScalarExprEmitter::VisitVAArgExpr(VAArgExpr *VE) {
   }
 
   // FIXME Volatility.
-  llvm::Value *Val = Builder.CreateLoad(ArgPtr);
+  llvm::Value *Val = Builder.CreateLoad(!CGF.CGM.getCodeGenOpts().UseDefaultAlignment, ArgPtr);
 
   // If EmitVAArg promoted the type, we must truncate it.
   if (ArgTy != Val->getType()) {
